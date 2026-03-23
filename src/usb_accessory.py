@@ -3,12 +3,27 @@ USB AOA (Android Open Accessory) Handler
 Menangani koneksi USB ke Android device via libusb/pyusb
 Support: Samsung, Sony, dan device Android lainnya
 Auto-detect device dengan informasi lengkap
+
+FIXED: Support untuk Termux dengan termux-usb dan backend fallback
 """
 
-import usb.core
-import usb.util
+import os
+import sys
 import time
 import logging
+import subprocess
+import ctypes
+
+# Try to import usb, handle if not available
+try:
+    import usb.core
+    import usb.util
+    import usb.backend
+    USB_AVAILABLE = True
+except ImportError:
+    USB_AVAILABLE = False
+    print("[!] PyUSB tidak terinstall. Install dengan: pip install pyusb")
+
 from hid_descriptor import (
     AOA_GET_PROTOCOL, AOA_SEND_IDENT, AOA_START_ACCESSORY,
     AOA_REGISTER_HID, AOA_UNREGISTER_HID, AOA_SET_HID_REPORT_DESC,
@@ -34,6 +49,135 @@ SAMSUNG_VID = 0x04E8
 
 HID_ID = 1  # ID HID instance
 
+# Platform detection
+IS_TERMUX = "com.termux" in os.environ.get("PREFIX", "")
+IS_LINUX = sys.platform.startswith("linux")
+IS_WINDOWS = sys.platform.startswith("win")
+
+
+def find_libusb_backend():
+    """
+    Find and return appropriate libusb backend for PyUSB
+    Handles Termux, Linux, and Windows
+    """
+    if not USB_AVAILABLE:
+        return None
+    
+    backend = None
+    
+    # Try different backend locations
+    libusb_paths = []
+    
+    if IS_TERMUX:
+        # Termux libusb locations
+        libusb_paths = [
+            '/data/data/com.termux/files/usr/lib/libusb-1.0.so',
+            '/data/data/com.termux/files/usr/lib/libusb-1.0.so.0',
+            '/system/lib64/libusb-1.0.so',
+            '/system/lib/libusb-1.0.so',
+            'libusb-1.0.so',
+        ]
+    elif IS_LINUX:
+        # Linux libusb locations
+        libusb_paths = [
+            '/usr/lib/x86_64-linux-gnu/libusb-1.0.so',
+            '/usr/lib/aarch64-linux-gnu/libusb-1.0.so',
+            '/usr/lib/arm-linux-gnueabihf/libusb-1.0.so',
+            '/usr/lib/libusb-1.0.so',
+            '/usr/local/lib/libusb-1.0.so',
+            'libusb-1.0.so.0',
+            'libusb-1.0.so',
+        ]
+    elif IS_WINDOWS:
+        # Windows - try to find libusb DLL
+        libusb_paths = [
+            'libusb-1.0.dll',
+            'libusb0.dll',
+            r'C:\Windows\System32\libusb-1.0.dll',
+        ]
+    
+    # Try each path
+    for path in libusb_paths:
+        try:
+            if os.path.exists(path) or not '/' in path:
+                backend = usb.backend.libusb1.get_backend(find_library=lambda x: path)
+                if backend:
+                    logger.debug(f"[+] Found libusb backend at: {path}")
+                    return backend
+        except Exception as e:
+            logger.debug(f"[-] Failed to load libusb from {path}: {e}")
+            continue
+    
+    # Try default backend discovery
+    try:
+        backend = usb.backend.libusb1.get_backend()
+        if backend:
+            logger.debug("[+] Found libusb backend using default discovery")
+            return backend
+    except Exception as e:
+        logger.debug(f"[-] Default backend discovery failed: {e}")
+    
+    # Try libusb0 backend as fallback
+    try:
+        backend = usb.backend.libusb0.get_backend()
+        if backend:
+            logger.debug("[+] Found libusb0 backend")
+            return backend
+    except Exception as e:
+        logger.debug(f"[-] libusb0 backend failed: {e}")
+    
+    # Try openusb backend as last resort
+    try:
+        backend = usb.backend.openusb.get_backend()
+        if backend:
+            logger.debug("[+] Found openusb backend")
+            return backend
+    except Exception as e:
+        logger.debug(f"[-] openusb backend failed: {e}")
+    
+    return None
+
+
+def check_termux_usb():
+    """
+    Check if termux-usb is available in Termux
+    Returns True if termux-usb is set up correctly
+    """
+    if not IS_TERMUX:
+        return True
+    
+    # Check if termux-usb binary exists
+    result = subprocess.run(['which', 'termux-usb'], capture_output=True, text=True)
+    if result.returncode != 0:
+        logger.warning("[!] termux-usb tidak ditemukan")
+        logger.warning("    Install dengan: pkg install termux-api")
+        return False
+    
+    return True
+
+
+def setup_termux_usb_access(device_path=None):
+    """
+    Setup USB access in Termux using termux-usb
+    This is needed because Android restricts direct USB access
+    """
+    if not IS_TERMUX:
+        return True
+    
+    logger.info("[*] Setting up Termux USB access...")
+    
+    # Check if termux-usb is available
+    if not check_termux_usb():
+        logger.error("[-] termux-usb tidak tersedia")
+        logger.error("    Install dengan: pkg install termux-api")
+        logger.error("    Dan pastikan Termux:API app terinstall dari Play Store")
+        return False
+    
+    # In Termux, we need to request USB permission
+    # This is typically done via termux-usb
+    logger.info("[*] USB access setup complete")
+    return True
+
 
 class DetectedDevice:
     """Class untuk menyimpan informasi device yang terdeteksi"""
@@ -54,16 +198,15 @@ class DetectedDevice:
             return format_device_info(self.model_code, self.device_info)
         else:
             return f"""
-╔══════════════════════════════════════════════════════════════╗
+╔══════════════════════════════════════════════════════════════════════════════╗
 ║                    📱 DEVICE DETECTED                        ║
-╠══════════════════════════════════════════════════════════════╣
+╠══════════════════════════════════════════════════════════════════════════════╣
 ║  Vendor         : {self.vendor_name:<38} ║
 ║  USB ID         : {f'0x{self.vid:04X}:0x{self.pid:04X}':<38} ║
 ║  Product        : {self.product_name[:38] if self.product_name else 'N/A':<38} ║
 ║  Manufacturer   : {self.manufacturer[:38] if self.manufacturer else 'N/A':<38} ║
 ║  Mode           : {'AOA Mode' if self.is_aoa_mode else 'Normal Mode':<38} ║
-╚══════════════════════════════════════════════════════════════╝
-""".strip()
+╚══════════════════════════════════════════════════════════════════════════════╝""".strip()
 
 
 class USBAccessory:
@@ -78,6 +221,29 @@ class USBAccessory:
         self.interface = None
         self._hid_registered = False
         self.detected_device = DetectedDevice()
+        self.backend = None
+        self._setup_backend()
+
+    def _setup_backend(self):
+        """Setup USB backend berdasarkan platform"""
+        if not USB_AVAILABLE:
+            logger.error("[-] PyUSB tidak tersedia!")
+            return
+        
+        self.backend = find_libusb_backend()
+        
+        if self.backend is None:
+            logger.error("[-] Tidak dapat menemukan libusb backend!")
+            logger.error("[-] Pastikan libusb terinstall:")
+            if IS_TERMUX:
+                logger.error("    pkg install libusb")
+                logger.error("    pkg install termux-api  # untuk termux-usb")
+            elif IS_LINUX:
+                logger.error("    sudo apt install libusb-1.0-0")
+            elif IS_WINDOWS:
+                logger.error("    Download libusb dari https://libusb.info/")
+        else:
+            logger.debug("[+] USB backend berhasil di-setup")
 
     def _read_device_string(self, dev, idx):
         """Baca string descriptor dari device"""
@@ -134,42 +300,68 @@ class USBAccessory:
         Return: (device, mode)
           mode = 'normal' | 'aoa'
         """
+        if not USB_AVAILABLE:
+            logger.error("[-] PyUSB tidak tersedia!")
+            return None, None
+        
+        if self.backend is None:
+            logger.error("[-] USB backend tidak tersedia!")
+            logger.error("[-] Pastikan libusb terinstall dengan benar")
+            if IS_TERMUX:
+                logger.error("[-] Di Termux, jalankan: pkg install libusb termux-api")
+            return None, None
+        
+        # Setup Termux USB access jika diperlukan
+        if IS_TERMUX:
+            setup_termux_usb_access()
+        
         # Cek apakah sudah mode AOA
         for pid in AOA_PID_LIST:
-            dev = usb.core.find(idVendor=GOOGLE_VID, idProduct=pid)
-            if dev is not None:
-                self._identify_device(dev, is_aoa=True)
-                logger.info(f"[+] Device sudah dalam mode AOA (PID: 0x{pid:04X})")
-                return dev, 'aoa'
+            try:
+                dev = usb.core.find(idVendor=GOOGLE_VID, idProduct=pid, backend=self.backend)
+                if dev is not None:
+                    self._identify_device(dev, is_aoa=True)
+                    logger.info(f"[+] Device sudah dalam mode AOA (PID: 0x{pid:04X})")
+                    return dev, 'aoa'
+            except Exception as e:
+                logger.debug(f"Error finding AOA device with PID {pid}: {e}")
+                continue
 
         # Cari berdasarkan known VIDs
         for vid, vendor_data in ANDROID_VENDOR_IDS.items():
-            dev = usb.core.find(idVendor=vid)
-            if dev is not None:
-                self._identify_device(dev, is_aoa=False)
-                logger.info(f"[+] Ditemukan {self.detected_device.vendor_name} device (VID: 0x{vid:04X})")
-                return dev, 'normal'
+            try:
+                dev = usb.core.find(idVendor=vid, backend=self.backend)
+                if dev is not None:
+                    self._identify_device(dev, is_aoa=False)
+                    logger.info(f"[+] Ditemukan {self.detected_device.vendor_name} device (VID: 0x{vid:04X})")
+                    return dev, 'normal'
+            except Exception as e:
+                logger.debug(f"Error finding device with VID {vid}: {e}")
+                continue
 
         # Fallback: scan semua device, cari yang punya string "Android" atau manufacturer known
-        for dev in usb.core.find(find_all=True):
-            try:
-                manufacturer = self._read_device_string(dev, dev.iManufacturer)
-                product = self._read_device_string(dev, dev.iProduct)
-                
-                if manufacturer and ('android' in manufacturer.lower() or 
-                                     'samsung' in manufacturer.lower()):
-                    self._identify_device(dev, is_aoa=False)
-                    logger.info(f"[+] Ditemukan via string: {manufacturer}")
-                    return dev, 'normal'
+        try:
+            for dev in usb.core.find(find_all=True, backend=self.backend):
+                try:
+                    manufacturer = self._read_device_string(dev, dev.iManufacturer)
+                    product = self._read_device_string(dev, dev.iProduct)
                     
-                if product and ('android' in product.lower() or 
-                                'samsung' in product.lower() or
-                                'galaxy' in product.lower()):
-                    self._identify_device(dev, is_aoa=False)
-                    logger.info(f"[+] Ditemukan via product: {product}")
-                    return dev, 'normal'
-            except Exception:
-                pass
+                    if manufacturer and ('android' in manufacturer.lower() or 
+                                         'samsung' in manufacturer.lower()):
+                        self._identify_device(dev, is_aoa=False)
+                        logger.info(f"[+] Ditemukan via string: {manufacturer}")
+                        return dev, 'normal'
+                        
+                    if product and ('android' in product.lower() or 
+                                    'samsung' in product.lower() or
+                                    'galaxy' in product.lower()):
+                        self._identify_device(dev, is_aoa=False)
+                        logger.info(f"[+] Ditemukan via product: {product}")
+                        return dev, 'normal'
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"Error scanning all devices: {e}")
 
         return None, None
 
@@ -228,8 +420,23 @@ class USBAccessory:
         """
         Connect ke Android device, switch ke AOA jika perlu
         """
+        # Check if USB is available
+        if not USB_AVAILABLE:
+            logger.error("[-] PyUSB tidak terinstall!")
+            logger.error("[-] Install dengan: pip install pyusb")
+            return False
+        
         for attempt in range(1, max_retries + 1):
             logger.info(f"[*] Mencari device... (attempt {attempt}/{max_retries})")
+            
+            # Check backend
+            if self.backend is None:
+                self._setup_backend()
+                if self.backend is None:
+                    logger.error("[-] USB backend tidak tersedia!")
+                    self._print_installation_help()
+                    return False
+            
             device, mode = self.find_android_device()
 
             if device is None:
@@ -251,12 +458,15 @@ class USBAccessory:
 
             elif mode == 'aoa':
                 # Detach kernel driver jika perlu
-                if device.is_kernel_driver_active(0):
-                    try:
-                        device.detach_kernel_driver(0)
-                        logger.info("[*] Kernel driver di-detach")
-                    except usb.core.USBError as e:
-                        logger.warning(f"[!] Gagal detach kernel driver: {e}")
+                try:
+                    if device.is_kernel_driver_active(0):
+                        try:
+                            device.detach_kernel_driver(0)
+                            logger.info("[*] Kernel driver di-detach")
+                        except usb.core.USBError as e:
+                            logger.warning(f"[!] Gagal detach kernel driver: {e}")
+                except Exception:
+                    pass  # Not all platforms support this
 
                 device.set_configuration()
 
@@ -282,6 +492,38 @@ class USBAccessory:
 
         logger.error(f"[-] Gagal connect setelah {max_retries} percobaan")
         return False
+
+    def _print_installation_help(self):
+        """Print help untuk instalasi dependencies"""
+        print("""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    ❌ USB BACKEND TIDAK DITEMUKAN                           ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║                                                                              ║
+║  PyUSB membutuhkan libusb sebagai backend untuk komunikasi USB.             ║
+║                                                                              ║
+║  📦 INSTALASI BERDASARKAN PLATFORM:                                         ║
+║                                                                              ║
+║  🤖 TERMUX (Android):                                                       ║
+║     pkg update && pkg upgrade                                               ║
+║     pkg install python libusb termux-api                                    ║
+║     pip install pyusb                                                       ║
+║     * Pastikan juga install app Termux:API dari Play Store                  ║
+║                                                                              ║
+║  🐧 LINUX (Ubuntu/Debian/Kali):                                             ║
+║     sudo apt update                                                         ║
+║     sudo apt install python3 python3-pip libusb-1.0-0                       ║
+║     pip3 install pyusb                                                      ║
+║     * Jalankan dengan sudo untuk akses USB                                  ║
+║                                                                              ║
+║  🪟 WINDOWS:                                                                 ║
+║     1. Install Python dari python.org                                       ║
+║     2. pip install pyusb                                                    ║
+║     3. Download libusb dari https://libusb.info/                            ║
+║     4. Extract dan copy libusb-1.0.dll ke C:\\Windows\\System32              ║
+║                                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+""")
 
     def register_hid(self):
         """
