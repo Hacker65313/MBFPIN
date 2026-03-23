@@ -1,0 +1,5 @@
+# Samsung Android PIN Bruteforce Tool
+# Python Dependencies
+
+# USB communication via libusb
+pyusb>=1.2.1
