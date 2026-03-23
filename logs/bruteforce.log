@@ -1,0 +1,48 @@
+00:05:02 [INFO] [*] PIN file: /workspace/bruteforce_project/android-bruteforce-samsung/pins/pins-4-digit.txt
+00:05:02 [INFO] [*] Mode: DRY RUN (simulasi tanpa hardware)
+00:05:02 [INFO] [*] Menggunakan koordinat keypad dari device database
+00:05:02 [INFO] [+] Loaded 10,000 PIN dari /workspace/bruteforce_project/android-bruteforce-samsung/pins/pins-4-digit.txt
+00:05:02 [INFO] 
+============================================================
+00:05:02 [INFO]   🚀  SAMSUNG PIN BRUTEFORCE DIMULAI
+00:05:02 [INFO] ============================================================
+00:05:02 [INFO]   Mode          : 4-digit PIN
+00:05:02 [INFO]   Total PIN     : 5
+00:05:02 [INFO]   Mulai index   : 0
+00:05:02 [INFO]   Sisa dicoba   : 5
+00:05:02 [INFO]   Est. waktu    : 38d
+00:05:02 [INFO] ============================================================
+
+00:05:04 [INFO] [*] Membangunkan layar dan menampilkan keypad...
+00:05:04 [INFO] [*] Double tap untuk tampilkan keypad...
+00:05:06 [INFO] [     1/5] (  0.0%) Mencoba PIN: 1234  |  Sisa: 4  |  ETA: 6d
+00:05:06 [DEBUG]     Tap '1' -> (1700, 5800)
+00:05:06 [DEBUG]     Tap '2' -> (5000, 5800)
+00:05:06 [DEBUG]     Tap '3' -> (8300, 5800)
+00:05:06 [DEBUG]     Tap '4' -> (1700, 6700)
+00:05:08 [INFO] [     2/5] ( 20.0%) Mencoba PIN: 0000  |  Sisa: 3  |  ETA: 5d
+00:05:08 [DEBUG]     Tap '0' -> (5000, 8500)
+00:05:08 [DEBUG]     Tap '0' -> (5000, 8500)
+00:05:08 [DEBUG]     Tap '0' -> (5000, 8500)
+00:05:08 [DEBUG]     Tap '0' -> (5000, 8500)
+00:05:10 [INFO] [     3/5] ( 40.0%) Mencoba PIN: 1111  |  Sisa: 2  |  ETA: 3d
+00:05:10 [DEBUG]     Tap '1' -> (1700, 5800)
+00:05:10 [DEBUG]     Tap '1' -> (1700, 5800)
+00:05:10 [DEBUG]     Tap '1' -> (1700, 5800)
+00:05:10 [DEBUG]     Tap '1' -> (1700, 5800)
+00:05:12 [INFO] [     4/5] ( 60.0%) Mencoba PIN: 1212  |  Sisa: 1  |  ETA: 1d
+00:05:12 [DEBUG]     Tap '1' -> (1700, 5800)
+00:05:12 [DEBUG]     Tap '2' -> (5000, 5800)
+00:05:12 [DEBUG]     Tap '1' -> (1700, 5800)
+00:05:12 [DEBUG]     Tap '2' -> (5000, 5800)
+00:05:13 [INFO] [     5/5] ( 80.0%) Mencoba PIN: 7777  |  Sisa: 0  |  ETA: 0d
+00:05:13 [DEBUG]     Tap '7' -> (1700, 7600)
+00:05:14 [DEBUG]     Tap '7' -> (1700, 7600)
+00:05:14 [DEBUG]     Tap '7' -> (1700, 7600)
+00:05:14 [DEBUG]     Tap '7' -> (1700, 7600)
+00:05:15 [INFO] 
+[!] Cooldown 34 detik...
+00:05:49 [INFO] [*] Melanjutkan...
+00:05:49 [INFO] 
+[!] Semua PIN sudah dicoba. PIN tidak ditemukan.
+00:05:49 [INFO] [!] Total percobaan: 5
