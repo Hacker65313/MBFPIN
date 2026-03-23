@@ -595,8 +595,9 @@ def main():
         
         # Use device detector to scan
         usb_devices = detector.scan_usb_devices()
-        android_devices = [d for d in usb_devices if detector._is_android_device(d) if hasattr(detector, '_is_android_device') else True]
-        
+        android_vids = ["04E8", "18D1", "2717", "12D1", "0BB4", "054C", "22D9", "19D2", "1BBB", "2A47", "29A9"]
+        android_devices = [d for d in usb_devices if d.get("vid", "").upper() in android_vids or 
+                  any(kw in d.get("description", "").lower() for kw in ["samsung", "android", "galaxy", "pixel"])]
         if not usb_devices:
             logger.error(f"{RED}[-] ❌ TIDAK ADA DEVICE TERHUBUNG!{RESET}")
             logger.error(f"{RED}[-] Pastikan:{RESET}")
